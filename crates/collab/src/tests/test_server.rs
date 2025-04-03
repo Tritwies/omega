@@ -1,22 +1,22 @@
 use crate::{
-    db::{tests::TestDb, NewUserParams, UserId},
-    executor::Executor,
-    rpc::{Principal, Server, ZedVersion, CLEANUP_TIMEOUT, RECONNECT_TIMEOUT},
     AppState, Config, RateLimiter,
+    db::{NewUserParams, UserId, tests::TestDb},
+    executor::Executor,
+    rpc::{CLEANUP_TIMEOUT, Principal, RECONNECT_TIMEOUT, Server, ZedVersion},
 };
 use anyhow::anyhow;
 use call::ActiveCall;
 use channel::{ChannelBuffer, ChannelStore};
 use client::{
-    self, proto::PeerId, ChannelId, Client, Connection, Credentials, EstablishConnectionError,
-    UserStore,
+    self, ChannelId, Client, Connection, Credentials, EstablishConnectionError, UserStore,
+    proto::PeerId,
 };
 use clock::FakeSystemClock;
 use collab_ui::channel_view::ChannelView;
 use collections::{HashMap, HashSet};
 use dap::DapRegistry;
 use fs::FakeFs;
-use futures::{channel::oneshot, StreamExt as _};
+use futures::{StreamExt as _, channel::oneshot};
 use git::GitHostingProviderRegistry;
 use gpui::{AppContext as _, BackgroundExecutor, Entity, Task, TestAppContext, VisualTestContext};
 use http_client::FakeHttpClient;
@@ -27,8 +27,8 @@ use parking_lot::Mutex;
 use project::{Project, WorktreeId};
 use remote::SshRemoteClient;
 use rpc::{
-    proto::{self, ChannelRole},
     RECEIVE_TIMEOUT,
+    proto::{self, ChannelRole},
 };
 use semantic_version::SemanticVersion;
 use serde_json::json;
@@ -40,18 +40,14 @@ use std::{
     ops::{Deref, DerefMut},
     path::Path,
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering::SeqCst},
         Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering::SeqCst},
     },
 };
 use util::path;
 use workspace::{Workspace, WorkspaceStore};
 
-#[cfg(not(target_os = "macos"))]
 use livekit_client::test::TestServer as LivekitTestServer;
-
-#[cfg(target_os = "macos")]
-use livekit_client_macos::TestServer as LivekitTestServer;
 
 pub struct TestServer {
     pub app_state: Arc<AppState>,
@@ -167,6 +163,7 @@ impl TestServer {
         let fs = FakeFs::new(cx.executor());
 
         cx.update(|cx| {
+            gpui_tokio::init(cx);
             if cx.has_global::<SettingsStore>() {
                 panic!("Same cx used to create two test clients")
             }

@@ -78,11 +78,7 @@ impl DebugAdapter for JsDebugAdapter {
             .ok_or_else(|| anyhow!("Couldn't find JavaScript dap directory"))?
         };
 
-        let Some(tcp_connection) = config.tcp_connection.clone() else {
-            anyhow::bail!(
-                "Javascript Debug Adapter expects tcp connection arguments to be provided"
-            );
-        };
+        let tcp_connection = config.tcp_connection.clone().unwrap_or_default();
         let (host, port, timeout) = crate::configure_tcp_connection(tcp_connection).await?;
 
         Ok(DebugAdapterBinary {
@@ -135,9 +131,11 @@ impl DebugAdapter for JsDebugAdapter {
         match &config.request {
             DebugRequestType::Attach(attach) => {
                 map.insert("processId".into(), attach.process_id.into());
+                map.insert("stopOnEntry".into(), config.stop_on_entry.into());
             }
             DebugRequestType::Launch(launch) => {
                 map.insert("program".into(), launch.program.clone().into());
+                map.insert("args".into(), launch.args.clone().into());
                 map.insert(
                     "cwd".into(),
                     launch

@@ -8,22 +8,22 @@ use std::time::Duration;
 use dap::client::SessionId;
 use failed::FailedState;
 use gpui::{
-    percentage, Animation, AnimationExt, AnyElement, App, Entity, EventEmitter, FocusHandle,
-    Focusable, Subscription, Task, Transformation, WeakEntity,
+    Animation, AnimationExt, AnyElement, App, Entity, EventEmitter, FocusHandle, Focusable,
+    Subscription, Task, Transformation, WeakEntity, percentage,
 };
 use inert::{InertEvent, InertState};
+use project::Project;
 use project::debugger::{dap_store::DapStore, session::Session};
 use project::worktree_store::WorktreeStore;
-use project::Project;
 use rpc::proto::{self, PeerId};
 use running::RunningState;
 use starting::{StartingEvent, StartingState};
 use task::DebugTaskDefinition;
-use ui::{prelude::*, Indicator};
+use ui::{Indicator, prelude::*};
 use util::ResultExt;
 use workspace::{
-    item::{self, Item},
     FollowableItem, ViewId, Workspace,
+    item::{self, Item},
 };
 
 use crate::debugger_panel::DebugPanel;
@@ -154,7 +154,7 @@ impl DebugSession {
         _: &Entity<InertState>,
         event: &InertEvent,
         window: &mut Window,
-        cx: &mut Context<'_, Self>,
+        cx: &mut Context<Self>,
     ) {
         let dap_store = self.dap_store.clone();
         let InertEvent::Spawned { config } = event;
@@ -186,7 +186,7 @@ impl DebugSession {
         _: &Entity<StartingState>,
         event: &StartingEvent,
         window: &mut Window,
-        cx: &mut Context<'_, Self>,
+        cx: &mut Context<Self>,
     ) {
         if let StartingEvent::Finished(session) = event {
             let mode =
@@ -337,7 +337,7 @@ impl FollowableItem for DebugSession {
 }
 
 impl Render for DebugSession {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         match &self.mode {
             DebugSessionState::Inert(inert_state) => {
                 inert_state.update(cx, |this, cx| this.render(window, cx).into_any_element())

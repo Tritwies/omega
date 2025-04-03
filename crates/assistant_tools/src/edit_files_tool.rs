@@ -2,12 +2,14 @@ mod edit_action;
 pub mod log;
 
 use crate::replace::{replace_exact, replace_with_flexible_indent};
-use anyhow::{anyhow, Context, Result};
+use crate::schema::json_schema_for;
+use anyhow::{Context, Result, anyhow};
 use assistant_tool::{ActionLog, Tool};
 use collections::HashSet;
-use edit_action::{EditAction, EditActionParser};
-use futures::{channel::mpsc, SinkExt, StreamExt};
+use edit_action::{EditAction, EditActionParser, edit_model_prompt};
+use futures::{SinkExt, StreamExt, channel::mpsc};
 use gpui::{App, AppContext, AsyncApp, Entity, Task};
+use language_model::LanguageModelToolSchemaFormat;
 use language_model::{
     LanguageModelRegistry, LanguageModelRequest, LanguageModelRequestMessage, MessageContent, Role,
 };
@@ -76,11 +78,11 @@ pub struct EditFilesTool;
 
 impl Tool for EditFilesTool {
     fn name(&self) -> String {
-        "edit-files".into()
+        "edit_files".into()
     }
 
     fn needs_confirmation(&self) -> bool {
-        true
+        false
     }
 
     fn description(&self) -> String {
@@ -91,9 +93,8 @@ impl Tool for EditFilesTool {
         IconName::Pencil
     }
 
-    fn input_schema(&self) -> serde_json::Value {
-        let schema = schemars::schema_for!(EditFilesToolInput);
-        serde_json::to_value(&schema).unwrap()
+    fn input_schema(&self, format: LanguageModelToolSchemaFormat) -> serde_json::Value {
+        json_schema_for::<EditFilesToolInput>(format)
     }
 
     fn ui_text(&self, input: &serde_json::Value) -> String {
@@ -228,10 +229,7 @@ impl EditToolRequest {
 
         messages.push(LanguageModelRequestMessage {
             role: Role::User,
-            content: vec![
-                include_str!("./edit_files_tool/edit_prompt.md").into(),
-                input.edit_instructions.into(),
-            ],
+            content: vec![edit_model_prompt().into(), input.edit_instructions.into()],
             cache: false,
         });
 
@@ -340,7 +338,17 @@ impl EditToolRequest {
                 self.push_search_error(error);
             }
             DiffResult::Diff(diff) => {
-                let _clock = buffer.update(cx, |buffer, cx| buffer.apply_diff(diff, cx))?;
+                cx.update(|cx| {
+                    self.action_log
+                        .update(cx, |log, cx| log.buffer_read(buffer.clone(), cx));
+                    buffer.update(cx, |buffer, cx| {
+                        buffer.finalize_last_transaction();
+                        buffer.apply_diff(diff, cx);
+                        buffer.finalize_last_transaction();
+                    });
+                    self.action_log
+                        .update(cx, |log, cx| log.buffer_edited(buffer.clone(), cx));
+                })?;
 
                 self.push_applied_action(AppliedAction { source, buffer });
             }
@@ -464,7 +472,7 @@ impl EditToolRequest {
                 let mut changed_buffers = HashSet::default();
 
                 for action in applied {
-                    changed_buffers.insert(action.buffer);
+                    changed_buffers.insert(action.buffer.clone());
                     write!(&mut output, "\n\n{}", action.source)?;
                 }
 
@@ -473,10 +481,6 @@ impl EditToolRequest {
                         .update(cx, |project, cx| project.save_buffer(buffer.clone(), cx))?
                         .await?;
                 }
-
-                self.action_log
-                    .update(cx, |log, cx| log.buffer_edited(changed_buffers.clone(), cx))
-                    .log_err();
 
                 if !search_errors.is_empty() {
                     writeln!(
@@ -519,7 +523,8 @@ impl EditToolRequest {
                         }
                     }
 
-                    write!(&mut output,
+                    write!(
+                        &mut output,
                         "The SEARCH section must exactly match an existing block of lines including all white \
                         space, comments, indentation, docstrings, etc."
                     )?;
@@ -538,7 +543,8 @@ impl EditToolRequest {
                 }
 
                 if has_errors {
-                    writeln!(&mut output,
+                    writeln!(
+                        &mut output,
                         "\n\nYou can fix errors by running the tool again. You can include instructions, \
                         but errors are part of the conversation so you don't need to repeat them.",
                     )?;
