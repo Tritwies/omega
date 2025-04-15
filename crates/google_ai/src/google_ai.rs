@@ -1,7 +1,7 @@
 mod supported_countries;
 
 use anyhow::{Result, anyhow, bail};
-use futures::{AsyncBufReadExt, AsyncReadExt, Stream, StreamExt, io::BufReader, stream::BoxStream};
+use futures::{AsyncBufReadExt, AsyncReadExt, StreamExt, io::BufReader, stream::BoxStream};
 use http_client::{AsyncBody, HttpClient, Method, Request as HttpRequest};
 use serde::{Deserialize, Serialize};
 
@@ -393,6 +393,8 @@ pub enum Model {
     Gemini20FlashLite,
     #[serde(rename = "gemini-2.5-pro-exp-03-25")]
     Gemini25ProExp0325,
+    #[serde(rename = "gemini-2.5-pro-preview-03-25")]
+    Gemini25ProPreview0325,
     #[serde(rename = "custom")]
     Custom {
         name: String,
@@ -412,6 +414,7 @@ impl Model {
             Model::Gemini20FlashThinking => "gemini-2.0-flash-thinking-exp",
             Model::Gemini20FlashLite => "gemini-2.0-flash-lite-preview",
             Model::Gemini25ProExp0325 => "gemini-2.5-pro-exp-03-25",
+            Model::Gemini25ProPreview0325 => "gemini-2.5-pro-preview-03-25",
             Model::Custom { name, .. } => name,
         }
     }
@@ -425,6 +428,7 @@ impl Model {
             Model::Gemini20FlashThinking => "Gemini 2.0 Flash Thinking",
             Model::Gemini20FlashLite => "Gemini 2.0 Flash Lite",
             Model::Gemini25ProExp0325 => "Gemini 2.5 Pro Exp",
+            Model::Gemini25ProPreview0325 => "Gemini 2.5 Pro Preview",
             Self::Custom {
                 name, display_name, ..
             } => display_name.as_ref().unwrap_or(name),
@@ -440,6 +444,7 @@ impl Model {
             Model::Gemini20FlashThinking => 1_000_000,
             Model::Gemini20FlashLite => 1_000_000,
             Model::Gemini25ProExp0325 => 1_000_000,
+            Model::Gemini25ProPreview0325 => 1_000_000,
             Model::Custom { max_tokens, .. } => *max_tokens,
         }
     }
@@ -449,25 +454,4 @@ impl std::fmt::Display for Model {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.id())
     }
-}
-
-pub fn extract_text_from_events(
-    events: impl Stream<Item = Result<GenerateContentResponse>>,
-) -> impl Stream<Item = Result<String>> {
-    events.filter_map(|event| async move {
-        match event {
-            Ok(event) => event.candidates.and_then(|candidates| {
-                candidates.into_iter().next().and_then(|candidate| {
-                    candidate.content.parts.into_iter().next().and_then(|part| {
-                        if let Part::TextPart(TextPart { text }) = part {
-                            Some(Ok(text))
-                        } else {
-                            None
-                        }
-                    })
-                })
-            }),
-            Err(error) => Some(Err(error)),
-        }
-    })
 }

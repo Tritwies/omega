@@ -33,7 +33,7 @@ impl Tool for DeletePathTool {
         "delete_path".into()
     }
 
-    fn needs_confirmation(&self) -> bool {
+    fn needs_confirmation(&self, _: &serde_json::Value, _: &App) -> bool {
         true
     }
 
@@ -45,7 +45,7 @@ impl Tool for DeletePathTool {
         IconName::FileDelete
     }
 
-    fn input_schema(&self, format: LanguageModelToolSchemaFormat) -> serde_json::Value {
+    fn input_schema(&self, format: LanguageModelToolSchemaFormat) -> Result<serde_json::Value> {
         json_schema_for::<DeletePathToolInput>(format)
     }
 

@@ -1118,9 +1118,16 @@ impl MultiBuffer {
         self.history.start_transaction(now)
     }
 
-    pub fn last_transaction_id(&self) -> Option<TransactionId> {
-        let last_transaction = self.history.undo_stack.last()?;
-        return Some(last_transaction.id);
+    pub fn last_transaction_id(&self, cx: &App) -> Option<TransactionId> {
+        if let Some(buffer) = self.as_singleton() {
+            return buffer.read_with(cx, |b, _| {
+                b.peek_undo_stack()
+                    .map(|history_entry| history_entry.transaction_id())
+            });
+        } else {
+            let last_transaction = self.history.undo_stack.last()?;
+            return Some(last_transaction.id);
+        }
     }
 
     pub fn end_transaction(&mut self, cx: &mut Context<Self>) -> Option<TransactionId> {
@@ -1718,23 +1725,25 @@ impl MultiBuffer {
                 (None, None) => break,
                 (None, Some(_)) => {
                     let existing_id = existing_iter.next().unwrap();
-                    let locator = snapshot.excerpt_locator_for_id(existing_id);
-                    let Some(existing_excerpt) = excerpts_cursor.item() else {
-                        break;
-                    };
-                    excerpts_cursor.seek_forward(&Some(locator), Bias::Left, &());
-                    let existing_end = existing_excerpt
-                        .range
-                        .context
-                        .end
-                        .to_point(&buffer_snapshot);
                     if let Some((new_id, last)) = to_insert.last() {
-                        if existing_end <= last.context.end {
-                            self.snapshot
-                                .borrow_mut()
-                                .replaced_excerpts
-                                .insert(existing_id, *new_id);
-                        }
+                        let locator = snapshot.excerpt_locator_for_id(existing_id);
+                        excerpts_cursor.seek_forward(&Some(locator), Bias::Left, &());
+                        if let Some(existing_excerpt) = excerpts_cursor
+                            .item()
+                            .filter(|e| e.buffer_id == buffer_snapshot.remote_id())
+                        {
+                            let existing_end = existing_excerpt
+                                .range
+                                .context
+                                .end
+                                .to_point(&buffer_snapshot);
+                            if existing_end <= last.context.end {
+                                self.snapshot
+                                    .borrow_mut()
+                                    .replaced_excerpts
+                                    .insert(existing_id, *new_id);
+                            }
+                        };
                     }
                     to_remove.push(existing_id);
                     continue;
@@ -1747,16 +1756,14 @@ impl MultiBuffer {
             };
             let locator = snapshot.excerpt_locator_for_id(*existing);
             excerpts_cursor.seek_forward(&Some(locator), Bias::Left, &());
-            let Some(existing_excerpt) = excerpts_cursor.item() else {
+            let Some(existing_excerpt) = excerpts_cursor
+                .item()
+                .filter(|e| e.buffer_id == buffer_snapshot.remote_id())
+            else {
                 to_remove.push(existing_iter.next().unwrap());
                 to_insert.push((next_excerpt_id(), new_iter.next().unwrap()));
                 continue;
             };
-            if existing_excerpt.buffer_id != buffer_snapshot.remote_id() {
-                to_remove.push(existing_iter.next().unwrap());
-                to_insert.push((next_excerpt_id(), new_iter.next().unwrap()));
-                continue;
-            }
 
             let existing_start = existing_excerpt
                 .range
@@ -1993,6 +2000,8 @@ impl MultiBuffer {
         self.sync(cx);
         let ids = self.excerpt_ids();
         self.buffers.borrow_mut().clear();
+        self.excerpts_by_path.clear();
+        self.paths_by_excerpt.clear();
         let mut snapshot = self.snapshot.borrow_mut();
         let start = ExcerptOffset::new(0);
         let prev_len = ExcerptOffset::new(snapshot.excerpts.summary().text.len);
@@ -2001,6 +2010,7 @@ impl MultiBuffer {
         snapshot.is_dirty = false;
         snapshot.has_deleted_file = false;
         snapshot.has_conflict = false;
+        snapshot.replaced_excerpts.clear();
 
         self.sync_diff_transforms(
             &mut snapshot,
@@ -2399,7 +2409,6 @@ impl MultiBuffer {
         let buffer_id = diff.buffer_id;
         let buffers = self.buffers.borrow();
         let Some(buffer_state) = buffers.get(&buffer_id) else {
-            eprintln!("no buffer");
             return;
         };
 
@@ -2649,9 +2658,13 @@ impl MultiBuffer {
         self.sync(cx);
         let mut snapshot = self.snapshot.borrow_mut();
         let mut excerpt_edits = Vec::new();
+        let mut last_hunk_row = None;
         for (range, end_excerpt_id) in ranges {
             for diff_hunk in snapshot.diff_hunks_in_range(range) {
                 if diff_hunk.excerpt_id.cmp(&end_excerpt_id, &snapshot).is_gt() {
+                    continue;
+                }
+                if last_hunk_row.map_or(false, |row| row >= diff_hunk.row_range.start) {
                     continue;
                 }
                 let start = Anchor::in_buffer(
@@ -2666,6 +2679,7 @@ impl MultiBuffer {
                 );
                 let start = snapshot.excerpt_offset_for_anchor(&start);
                 let end = snapshot.excerpt_offset_for_anchor(&end);
+                last_hunk_row = Some(diff_hunk.row_range.start);
                 excerpt_edits.push(text::Edit {
                     old: start..end,
                     new: start..end,
@@ -7680,7 +7694,12 @@ impl ToOffset for Point {
 impl ToOffset for usize {
     #[track_caller]
     fn to_offset<'a>(&self, snapshot: &MultiBufferSnapshot) -> usize {
-        assert!(*self <= snapshot.len(), "offset is out of range");
+        assert!(
+            *self <= snapshot.len(),
+            "offset {} is greater than the snapshot.len() {}",
+            *self,
+            snapshot.len(),
+        );
         *self
     }
 }
