@@ -63,3 +63,37 @@ ollama
 # Environment-specific files
 .python-version
 **/.claude/settings.local.json
+
+# Zed specific
+**/*.db
+**/cargo-target
+**/target
+**/.direnv
+*.wasm
+*.xcodeproj
+.blob_store
+.build
+.envrc
+.flatpak-builder
+.netrc
+.pytest_cache
+.swiftpm
+.swiftpm/config/registries.json
+.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+.venv
+.wrangler
+/assets/*licenses.*
+/crates/collab/seed.json
+/crates/theme/schemas/theme.json
+/crates/zed/resources/flatpak/flatpak-cargo-sources.json
+/dev.zed.Zed*.json
+/plugins/bin
+/script/node_modules
+/snap
+/zed.xcworkspace
+DerivedData/
+Packages
+xcuserdata/
+
+# Don't commit any secrets to the repo.
+.env.secret.toml
